@@ -144,6 +144,15 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
 
+        format_menu = menu.addMenu("F&ormat")
+        self.edit_format_actions = {}
+        for slot in SLOTS:
+            action = QAction(f"Edit Format {slot}...", self)
+            action.triggered.connect(lambda checked=False, s=slot: self._edit_format(s))
+            action.setEnabled(False)
+            format_menu.addAction(action)
+            self.edit_format_actions[slot] = action
+
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Main")
         toolbar.setMovable(False)
@@ -244,7 +253,31 @@ class MainWindow(QMainWindow):
         path, fmt, matrix, color_range = result
         self._load_source(slot, path, fmt, matrix, color_range)
 
-    def _load_source(self, slot: str, path: str, fmt: YuvFormat, matrix: ColorMatrix, color_range: ColorRange) -> None:
+    def _edit_format(self, slot: str) -> None:
+        """Re-opens the format dialog pre-filled with this source's current settings.
+
+        Available regardless of the current view mode (Single or
+        Side-by-side) -- whichever of A/B is loaded can be corrected in
+        place without re-picking the file.
+        """
+        info = self.sources[slot]
+        if info is None:
+            return
+        result = OpenFormatDialog.edit_existing(self, slot, info.path, info.fmt, info.matrix, info.color_range)
+        if result is None:
+            return
+        fmt, matrix, color_range = result
+        self._load_source(slot, info.path, fmt, matrix, color_range, reset_playhead=False)
+
+    def _load_source(
+        self,
+        slot: str,
+        path: str,
+        fmt: YuvFormat,
+        matrix: ColorMatrix,
+        color_range: ColorRange,
+        reset_playhead: bool = True,
+    ) -> None:
         try:
             probe = YuvFile(path, fmt)
         except OSError as exc:
@@ -272,13 +305,13 @@ class MainWindow(QMainWindow):
                 f"The last partial frame will be ignored ({info.frame_count} whole frames available).",
             )
 
-        if slot == "A":
+        if slot == "A" and reset_playhead:
             self._active_single = "A"
         self._update_view_mode_availability()
         self._update_controls_enabled()
         self._update_frame_range()
         self._update_format_label()
-        self._seek(0)
+        self._seek(0 if reset_playhead else self._playhead)
 
     # --------------------------------------------------------- frame flow
 
@@ -512,6 +545,8 @@ class MainWindow(QMainWindow):
         for widget in (self.play_button, self.frame_slider, self.frame_spin, self.fps_spin):
             widget.setEnabled(any_loaded)
         self.compute_clip_button.setEnabled(both_loaded)
+        for slot in SLOTS:
+            self.edit_format_actions[slot].setEnabled(self.sources[slot] is not None)
 
     def _toggle_active_or_play(self) -> None:
         # Space bar: A/B toggle in Single mode (if both loaded), else play/pause.
