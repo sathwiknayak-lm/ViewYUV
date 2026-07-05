@@ -160,6 +160,27 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         style = self.style()
 
+        self.open_buttons = {}
+        self.edit_format_buttons = {}
+        for slot in SLOTS:
+            open_button = QPushButton(f"Open {slot}...")
+            open_button.setToolTip(f"Open a raw YUV file into slot {slot}")
+            open_button.clicked.connect(lambda checked=False, s=slot: self._open_source(s))
+            toolbar.addWidget(open_button)
+            self.open_buttons[slot] = open_button
+
+            edit_button = QPushButton(f"Edit {slot}...")
+            edit_button.setToolTip(f"Edit resolution/format/matrix/range for the file already loaded in {slot}")
+            edit_button.setEnabled(False)
+            edit_button.clicked.connect(lambda checked=False, s=slot: self._edit_format(s))
+            toolbar.addWidget(edit_button)
+            self.edit_format_buttons[slot] = edit_button
+
+            if slot != SLOTS[-1]:
+                toolbar.addSeparator()
+
+        toolbar.addSeparator()
+
         self.play_button = QPushButton()
         self.play_button.setIcon(style.standardIcon(QStyle.SP_MediaPlay))
         self.play_button.setToolTip("Play/pause (Space)")
@@ -546,7 +567,9 @@ class MainWindow(QMainWindow):
             widget.setEnabled(any_loaded)
         self.compute_clip_button.setEnabled(both_loaded)
         for slot in SLOTS:
-            self.edit_format_actions[slot].setEnabled(self.sources[slot] is not None)
+            loaded = self.sources[slot] is not None
+            self.edit_format_actions[slot].setEnabled(loaded)
+            self.edit_format_buttons[slot].setEnabled(loaded)
 
     def _toggle_active_or_play(self) -> None:
         # Space bar: A/B toggle in Single mode (if both loaded), else play/pause.
