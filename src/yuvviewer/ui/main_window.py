@@ -1,15 +1,14 @@
-"""Main application window: orchestrates sources, playback, view modes, and metrics."""
+"""Main application window: orchestrates sources, frame navigation, view modes, and metrics."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QThread, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
-    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -18,7 +17,6 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QSpinBox,
-    QStyle,
     QToolBar,
     QWidget,
 )
@@ -75,7 +73,6 @@ class MainWindow(QMainWindow):
         self._channel_mode = ChannelMode.FULL
         self._view_mode = ViewMode.SINGLE
         self._active_single = "A"
-        self._playing = False
         self._updating_controls = False
         self._exportable_rgb = None
         self._resize_notice = ""
@@ -116,10 +113,10 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_statusbar()
 
-        play_action = QAction(self)
-        play_action.setShortcut(Qt.Key_Space)
-        play_action.triggered.connect(self._toggle_active_or_play)
-        self.addAction(play_action)
+        ab_toggle_action = QAction(self)
+        ab_toggle_action.setShortcut(Qt.Key_Space)
+        ab_toggle_action.triggered.connect(self._toggle_active_source)
+        self.addAction(ab_toggle_action)
 
     def _build_menu(self) -> None:
         menu = self.menuBar()
@@ -158,7 +155,6 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.addToolBar(toolbar)
-        style = self.style()
 
         self.open_buttons = {}
         self.edit_format_buttons = {}
@@ -181,30 +177,12 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        self.play_button = QPushButton()
-        self.play_button.setIcon(style.standardIcon(QStyle.SP_MediaPlay))
-        self.play_button.setToolTip("Play/pause (Space)")
-        self.play_button.clicked.connect(self._toggle_play)
-        toolbar.addWidget(self.play_button)
-
-        prev_button = QPushButton()
-        prev_button.setIcon(style.standardIcon(QStyle.SP_MediaSkipBackward))
-        prev_button.setToolTip("Previous frame")
-        prev_button.clicked.connect(lambda: self._seek(self._playhead - 1))
-        toolbar.addWidget(prev_button)
-
-        next_button = QPushButton()
-        next_button.setIcon(style.standardIcon(QStyle.SP_MediaSkipForward))
-        next_button.setToolTip("Next frame")
-        next_button.clicked.connect(lambda: self._seek(self._playhead + 1))
-        toolbar.addWidget(next_button)
-
-        toolbar.addWidget(QLabel(" FPS: "))
-        self.fps_spin = QSpinBox()
-        self.fps_spin.setRange(1, 240)
-        self.fps_spin.setValue(25)
-        self.fps_spin.valueChanged.connect(self._on_fps_changed)
-        toolbar.addWidget(self.fps_spin)
+        toolbar.addWidget(QLabel(" View: "))
+        self.view_mode_combo = QComboBox()
+        for mode in ViewMode:
+            self.view_mode_combo.addItem(mode.value, mode)
+        self.view_mode_combo.currentIndexChanged.connect(self._on_view_mode_changed)
+        toolbar.addWidget(self.view_mode_combo)
 
         toolbar.addSeparator()
 
@@ -240,13 +218,6 @@ class MainWindow(QMainWindow):
             self.channel_combo.addItem(mode.value, mode)
         self.channel_combo.currentIndexChanged.connect(self._on_channel_changed)
         toolbar.addWidget(self.channel_combo)
-
-        toolbar.addWidget(QLabel(" View: "))
-        self.view_mode_combo = QComboBox()
-        for mode in ViewMode:
-            self.view_mode_combo.addItem(mode.value, mode)
-        self.view_mode_combo.currentIndexChanged.connect(self._on_view_mode_changed)
-        toolbar.addWidget(self.view_mode_combo)
 
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -534,10 +505,6 @@ class MainWindow(QMainWindow):
         if not self._updating_controls:
             self._seek(value)
 
-    def _on_fps_changed(self, value: int) -> None:
-        if self._playing:
-            self._play_timer.setInterval(int(1000 / value))
-
     def _on_channel_changed(self, _index: int) -> None:
         self._channel_mode = self.channel_combo.currentData()
         self._update_display()
@@ -563,7 +530,7 @@ class MainWindow(QMainWindow):
     def _update_controls_enabled(self) -> None:
         any_loaded = any(s is not None for s in self.sources.values())
         both_loaded = self.sources["A"] is not None and self.sources["B"] is not None
-        for widget in (self.play_button, self.frame_slider, self.frame_spin, self.fps_spin):
+        for widget in (self.frame_slider, self.frame_spin):
             widget.setEnabled(any_loaded)
         self.compute_clip_button.setEnabled(both_loaded)
         for slot in SLOTS:
@@ -571,38 +538,12 @@ class MainWindow(QMainWindow):
             self.edit_format_actions[slot].setEnabled(loaded)
             self.edit_format_buttons[slot].setEnabled(loaded)
 
-    def _toggle_active_or_play(self) -> None:
-        # Space bar: A/B toggle in Single mode (if both loaded), else play/pause.
+    def _toggle_active_source(self) -> None:
+        # Space bar: A/B toggle in Single mode, when both are loaded.
         if self._view_mode is ViewMode.SINGLE and self.sources["A"] is not None and self.sources["B"] is not None:
             self._active_single = "B" if self._active_single == "A" else "A"
             self._request_frame(self._active_single)
             self._update_display()
-        else:
-            self._toggle_play()
-
-    # ------------------------------------------------------------ playback
-
-    def _toggle_play(self) -> None:
-        self._playing = not self._playing
-        style = self.style()
-        if self._playing:
-            self.play_button.setIcon(style.standardIcon(QStyle.SP_MediaPause))
-            self._play_timer = getattr(self, "_play_timer", None) or QTimer(self)
-            self._play_timer.timeout.connect(self._on_play_tick)
-            self._play_timer.start(int(1000 / self.fps_spin.value()))
-        else:
-            self.play_button.setIcon(style.standardIcon(QStyle.SP_MediaPlay))
-            if getattr(self, "_play_timer", None):
-                self._play_timer.stop()
-
-    def _on_play_tick(self) -> None:
-        total = self._max_frame_count()
-        if total == 0:
-            return
-        if self._playhead >= total - 1:
-            self._toggle_play()
-            return
-        self._seek(self._playhead + 1)
 
     # -------------------------------------------------------------- export
 
@@ -654,8 +595,6 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------- misc
 
     def closeEvent(self, event) -> None:
-        if self._playing:
-            self._toggle_play()
         if self._metrics_thread is not None:
             self._metrics_worker.request_cancel()
             self._metrics_thread.quit()

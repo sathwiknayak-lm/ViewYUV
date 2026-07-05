@@ -11,9 +11,8 @@ Not a fork of YUView or any other viewer; built from scratch in Python.
 - Raw YUV decoding: I420, YV12, NV12, NV21, I422, I444, 8-bit and 10-bit
   (unpacked little-endian).
 - BT.601 / BT.709 color matrices, limited or full range.
-- Frame navigation (slider, prev/next, jump-to-frame), play/pause with
-  adjustable FPS. Decoding runs on a worker thread and drops frames under
-  load rather than blocking the UI.
+- Frame navigation via a slider and a jump-to-frame box. Decoding runs
+  on a worker thread so scrubbing never blocks the UI.
 - Channel isolation: full color / Y / U / V.
 - Zoom (mouse wheel), pan (click-drag), fit-to-window, 100%, and a status
   bar showing cursor position + raw Y/U/V values.
