@@ -46,12 +46,35 @@ double-clickable binary with [PyInstaller](https://pyinstaller.org):
 
 ```bash
 pip install pyinstaller
-pyinstaller --noconfirm --windowed --onefile --name viewYUV -p src scripts/pyinstaller_entry.py
+# Windows:
+pyinstaller --noconfirm --windowed --onefile --name viewYUV -p src ^
+  --icon resources/icon.ico --add-data "resources/icon.ico;resources" ^
+  scripts/pyinstaller_entry.py
+# Linux/macOS (data-file separator is ':' instead of ';'):
+pyinstaller --noconfirm --windowed --onefile --name viewYUV -p src \
+  --icon resources/icon.ico --add-data "resources/icon.ico:resources" \
+  scripts/pyinstaller_entry.py
 ```
 
 The result is `dist/viewYUV.exe` (or the platform equivalent) -- a single
-file with no Python/PySide6 install required on the target machine. Zip
-it up and send it directly, or attach it to a GitHub Release.
+file with no Python/PySide6 install required on the target machine, with
+the app icon baked into both the .exe file itself and the window/taskbar
+icon at runtime. Zip it up and send it directly, or attach it to a
+GitHub Release.
+
+### Making it a "real" install (Start Menu shortcut, uninstaller)
+
+Double-clicking `viewYUV.exe` just runs it directly (it's a portable
+app, nothing is "installed"). If you want a proper installer -- Start
+Menu entry, optional Desktop shortcut, and an uninstall entry in
+Windows Settings -- see `scripts/build_installer.iss` (requires
+[Inno Setup](https://jrsoftware.org/isinfo.php)):
+
+```bash
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" scripts\build_installer.iss
+```
+
+This produces `dist/viewYUV-Setup.exe`, a normal Windows installer.
 
 This has to be built separately on each OS you want to support -- a
 Windows build only runs on Windows, a macOS build only on macOS, etc.
