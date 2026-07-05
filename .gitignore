@@ -8,8 +8,11 @@ __pycache__/
 .eggs/
 build/
 dist/
+installers/
 *.spec
 *.exe
+*.dmg
+*.AppImage
 
 # Virtual environments
 .venv/

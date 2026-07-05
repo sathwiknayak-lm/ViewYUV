@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=YUView-lite
+Comment=Viewer/comparator for raw, headerless YUV video files
+Exec=viewYUV
+Icon=viewYUV
+Categories=Graphics;Video;Viewer;
+Terminal=false
